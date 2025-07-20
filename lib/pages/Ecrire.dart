@@ -12,9 +12,7 @@ class EcrirePage extends StatefulWidget {
 class _EcrirePageState extends State<EcrirePage> {
   final TextEditingController _controller = TextEditingController();
   final List<Map<String, String>> _messages = [];
-
-  final String _apiKey = 'AIzaSyB1IaegQbeRuN6R5dAaV2qtEPlKDVStgzY';
-
+  final String _apiKey = 'TA_CLÉ_API_ICI'; // Mets ta vraie clé ici
   bool _isLoading = false;
 
   Future<void> _sendMessage(String text) async {
@@ -28,22 +26,28 @@ class _EcrirePageState extends State<EcrirePage> {
     _controller.clear();
 
     final url = Uri.parse(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$_apiKey',
     );
 
     final headers = {
       'Content-Type': 'application/json',
-      'X-Goog-Api-Key': _apiKey,
     };
 
     final body = jsonEncode({
       "contents": [
         {
+          "role": "user",
           "parts": [
-            {"text": text.trim()}
+            {"text": "Réponds en français : $text"}
           ]
         }
-      ]
+      ],
+      "generationConfig": {
+        "temperature": 0.7,
+        "topK": 1,
+        "topP": 1,
+        "maxOutputTokens": 2048
+      }
     });
 
     try {
@@ -51,16 +55,14 @@ class _EcrirePageState extends State<EcrirePage> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final candidates = data['candidates'] as List<dynamic>?;
+        final candidates = data['candidates'];
 
-        String reply = "Je n'ai pas compris, veuillez reformuler.";
+        String reply = "Je n'ai pas compris. Veuillez reformuler.";
 
         if (candidates != null && candidates.isNotEmpty) {
-          final content = candidates[0]['content'];
-          if (content != null &&
-              content['parts'] != null &&
-              content['parts'][0]['text'] != null) {
-            reply = content['parts'][0]['text'];
+          final parts = candidates[0]['content']['parts'];
+          if (parts != null && parts.isNotEmpty) {
+            reply = parts[0]['text'];
           }
         }
 
@@ -81,7 +83,7 @@ class _EcrirePageState extends State<EcrirePage> {
       setState(() {
         _messages.add({
           "role": "assistant",
-          "content": "Erreur lors de la requête : $e"
+          "content": "Erreur de réseau : $e"
         });
         _isLoading = false;
       });
@@ -94,9 +96,9 @@ class _EcrirePageState extends State<EcrirePage> {
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: isUser ? Colors.green.shade200 : Colors.grey.shade100,
+          color: isUser ? Colors.green[100] : Colors.white,
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(16),
             topRight: const Radius.circular(16),
@@ -105,41 +107,15 @@ class _EcrirePageState extends State<EcrirePage> {
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.grey.shade300,
-              blurRadius: 3,
-              offset: const Offset(2, 2),
+              color: Colors.grey.withOpacity(0.2),
+              blurRadius: 6,
+              offset: const Offset(2, 3),
             ),
           ],
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (!isUser)
-              const Padding(
-                padding: EdgeInsets.only(right: 8),
-                child: CircleAvatar(
-                  backgroundColor: Colors.green,
-                  radius: 14,
-                  child: Icon(Icons.local_hospital, size: 16, color: Colors.white),
-                ),
-              ),
-            Flexible(
-              child: Text(
-                message["content"] ?? "",
-                style: const TextStyle(fontSize: 16),
-              ),
-            ),
-            if (isUser)
-              const Padding(
-                padding: EdgeInsets.only(left: 8),
-                child: CircleAvatar(
-                  backgroundColor: Colors.grey,
-                  radius: 14,
-                  child: Icon(Icons.person, size: 16, color: Colors.white),
-                ),
-              ),
-          ],
+        child: Text(
+          message["content"] ?? "",
+          style: const TextStyle(fontSize: 16),
         ),
       ),
     );
@@ -148,21 +124,19 @@ class _EcrirePageState extends State<EcrirePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.green.shade50,
+      backgroundColor: Colors.green[50],
       appBar: AppBar(
+        title: const Text("Messagerie", style: TextStyle(color: Colors.white)),
+        centerTitle: true,
         backgroundColor: Colors.green,
-        elevation: 2,
-        title: const Text("Assistant Keneya"),
-        leading: const Icon(Icons.health_and_safety),
       ),
       body: Column(
         children: [
           Expanded(
             child: ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: 12),
+              padding: const EdgeInsets.all(8),
               itemCount: _messages.length,
-              itemBuilder: (context, index) =>
-                  _buildMessage(_messages[index]),
+              itemBuilder: (context, index) => _buildMessage(_messages[index]),
             ),
           ),
           if (_isLoading)
@@ -172,44 +146,38 @@ class _EcrirePageState extends State<EcrirePage> {
             ),
           const Divider(height: 1),
           Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             color: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
             child: Row(
               children: [
                 Expanded(
                   child: TextField(
                     controller: _controller,
-                    decoration: InputDecoration(
-                      hintText: "Posez votre question...",
-                      filled: true,
-                      fillColor: Colors.green.shade50,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 12),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(30),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
+                    textInputAction: TextInputAction.send,
                     onSubmitted: (value) {
                       if (!_isLoading) _sendMessage(value);
                     },
+                    decoration: InputDecoration(
+                      hintText: "Écrivez votre question en santé...",
+                      filled: true,
+                      fillColor: Colors.grey[100],
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                    ),
                     enabled: !_isLoading,
                   ),
                 ),
                 const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: _isLoading
-                      ? null
-                      : () => _sendMessage(_controller.text),
-                  child: CircleAvatar(
-                    backgroundColor:
-                        _isLoading ? Colors.grey : Colors.green,
-                    child: const Icon(Icons.send, color: Colors.white),
-                  ),
+                IconButton(
+                  icon: const Icon(Icons.send, color: Colors.green, size: 28),
+                  onPressed: _isLoading ? null : () => _sendMessage(_controller.text),
                 ),
               ],
             ),
-          )
+          ),
         ],
       ),
     );

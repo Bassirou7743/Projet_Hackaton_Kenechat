@@ -184,7 +184,7 @@ class _VoiceAssistantState extends State<VoiceAssistant> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Assistant Keneya'),
+        title: const Text('Discussion Vocale', style: TextStyle(color: Colors.white)),
         backgroundColor: Colors.green,
       ),
       backgroundColor: Colors.green.shade50,
