@@ -1,11 +1,9 @@
-import 'dart:io';
-import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:flutter_sound/flutter_sound.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:http/http.dart' as http;
+import 'package:permission_handler/permission_handler.dart';
+import 'dart:convert';
 
 class VoiceAssistant extends StatefulWidget {
   const VoiceAssistant({super.key});
@@ -15,93 +13,91 @@ class VoiceAssistant extends StatefulWidget {
 }
 
 class _VoiceAssistantState extends State<VoiceAssistant> {
-  FlutterSoundRecorder _recorder = FlutterSoundRecorder();
-  FlutterTts _tts = FlutterTts();
-  bool _isRecording = false;
+  late stt.SpeechToText _speech;
+  bool _isListening = false;
   String _transcription = '';
   String _responseIA = '';
-  final String _apiKey = 'AIzaSyDkfnrNvgMcX4vsRt5s8nmo1m4UwG2SfwE';
-  final String _apiKey1 = 'AIzaSyDkfnrNvgMcX4vsRt5s8nmo1m4UwG2SfwE';
+  FlutterTts _tts = FlutterTts();
+
+  final String _apiKeyGemini = 'TA_CLE_API_GEMINI_ICI'; // Remplace par ta clé
 
   @override
   void initState() {
     super.initState();
-    _initRecorder();
+    _speech = stt.SpeechToText();
+    _askPermission();
   }
 
-  Future<void> _initRecorder() async {
-    await Permission.microphone.request();
-    await _recorder.openRecorder();
-    await _recorder.setSubscriptionDuration(const Duration(milliseconds: 500));
-  }
-
-  Future<String> _getFilePath() async {
-    final dir = await getTemporaryDirectory();
-    return '${dir.path}/keneya.wav';
-  }
-
-  Future<void> _startRecording() async {
-    final path = await _getFilePath();
-    await _recorder.startRecorder(
-      toFile: path,
-      codec: Codec.pcm16WAV,
-      sampleRate: 16000,
-    );
-    setState(() => _isRecording = true);
-  }
-
-  Future<void> _stopRecording() async {
-    final path = await _recorder.stopRecorder();
-    setState(() => _isRecording = false);
-    if (path != null) {
-      await _sendToGoogleSTT(File(path));
+  Future<void> _askPermission() async {
+    var status = await Permission.microphone.request();
+    if (!status.isGranted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Permission micro refusée')),
+      );
     }
   }
 
-  Future<void> _sendToGoogleSTT(File audioFile) async {
-    final bytes = await audioFile.readAsBytes();
-    final base64Audio = base64Encode(bytes);
-
-    final body = jsonEncode({
-      "config": {
-        "encoding": "LINEAR16",
-        "sampleRateHertz": 16000,
-        "languageCode": "fr-FR"
+  Future<void> _startListening() async {
+    bool available = await _speech.initialize(
+      onStatus: (val) {
+        print('Status: $val');
+        if (val == 'done') {
+          _stopListening();
+        }
       },
-      "audio": {"content": base64Audio}
-    });
-
-    final response = await http.post(
-      Uri.parse('https://speech.googleapis.com/v1/speech:recognize?key=$_apiKey'),
-      headers: {'Content-Type': 'application/json'},
-      body: body,
+      onError: (val) {
+        print('Erreur speech_to_text: $val');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur: ${val.errorMsg}')),
+        );
+      },
     );
 
-    if (response.statusCode == 200) {
-      final result = jsonDecode(response.body);
-      final text = result['results']?[0]?['alternatives']?[0]?['transcript'] ?? '';
-      setState(() {
-        _transcription = text;
-        _responseIA = "Analyse en cours...";
-      });
-      if (text.isNotEmpty) _sendTextToGemini(text);
-    } else {
-      setState(() => _transcription = "Erreur API Speech-to-Text");
+    if (!available) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Reconnaissance vocale non disponible')),
+      );
+      return;
+    }
+
+    setState(() => _isListening = true);
+
+    _speech.listen(
+      onResult: (result) {
+        setState(() {
+          _transcription = result.recognizedWords;
+        });
+      },
+      localeId: 'fr_FR', // Essaie 'en_US' si 'fr_FR' ne fonctionne pas
+    );
+  }
+
+  Future<void> _stopListening() async {
+    await _speech.stop();
+    setState(() => _isListening = false);
+
+    if (_transcription.isNotEmpty) {
+      setState(() => _responseIA = 'Analyse en cours...');
+      await _sendTextToGemini(_transcription);
     }
   }
 
   Future<void> _sendTextToGemini(String text) async {
-    final url = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-pro:generateContent');
+    final url = Uri.parse(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-pro:generateContent',
+    );
     final response = await http.post(
       url,
       headers: {
         'Content-Type': 'application/json',
-        'X-goog-api-key': _apiKey1,
+        'X-goog-api-key': _apiKeyGemini,
       },
       body: jsonEncode({
         "contents": [
           {
-            "parts": [{"text": text}]
+            "parts": [
+              {"text": text}
+            ]
           }
         ]
       }),
@@ -111,9 +107,10 @@ class _VoiceAssistantState extends State<VoiceAssistant> {
       final data = jsonDecode(response.body);
       final answer = data['candidates'][0]['content']['parts'][0]['text'];
       setState(() => _responseIA = answer);
-      _speak(answer);
+      await _speak(answer);
     } else {
       setState(() => _responseIA = "Erreur API Gemini.");
+      print("Erreur Gemini: ${response.body}");
     }
   }
 
@@ -124,77 +121,98 @@ class _VoiceAssistantState extends State<VoiceAssistant> {
 
   @override
   void dispose() {
-    _recorder.closeRecorder();
+    _speech.stop();
     _tts.stop();
     super.dispose();
   }
 
-  Widget _buildCard(String title, String content, {double maxHeight = 150}) {
-  return Container(
-    width: double.infinity,
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      boxShadow: [
-        BoxShadow(color: Colors.green.shade100, blurRadius: 10, offset: const Offset(0, 4)),
-      ],
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.green,
-          ),
-        ),
-        const SizedBox(height: 10),
-        SizedBox(
-          height: maxHeight,
-          child: SingleChildScrollView(
-            child: Text(
-              content.isEmpty ? "..." : content,
-              style: const TextStyle(fontSize: 16),
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-
- @override
-Widget build(BuildContext context) {
-  return Scaffold(
-    appBar: AppBar(
-      title: const Text('Assistant Keneya'),
-      backgroundColor: Colors.green,
-    ),
-    backgroundColor: Colors.green.shade50,
-    body: Padding(
+  Widget _buildCard(String title, String content, {double maxHeight = 200}) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          _buildCard("🎙️ Transcription", _transcription, maxHeight: 200),
-          const SizedBox(height: 20),
-          _buildCard("💡 Réponse IA", _responseIA, maxHeight: 200),
-          const SizedBox(height: 20),
-          FloatingActionButton(
-            backgroundColor: Colors.green,
-            onPressed: _isRecording ? _stopRecording : _startRecording,
-            child: Icon(_isRecording ? Icons.stop : Icons.mic, size: 28),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.green.shade100,
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
-    ),
-  );
-}
-
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.green,
+              fontFamily: 'Arial',
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            constraints: BoxConstraints(
+              maxHeight: maxHeight,
+              minHeight: 100,
+            ),
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(8.0),
+              child: Text(
+                content.isEmpty ? "..." : content,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontFamily: 'Arial',
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
- 
-
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Assistant Keneya'),
+        backgroundColor: Colors.green,
+      ),
+      backgroundColor: Colors.green.shade50,
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            _buildCard("Transcription", _transcription, maxHeight: 150),
+            _buildCard("Réponse IA", _responseIA, maxHeight: 200),
+            const SizedBox(height: 100),
+          ],
+        ),
+      ),
+      bottomNavigationBar: SizedBox(
+        height: 80,
+        child: Stack(
+          children: [
+            Align(
+              alignment: Alignment.topCenter,
+              child: FloatingActionButton(
+                backgroundColor: Colors.green,
+                onPressed: _isListening ? _stopListening : _startListening,
+                child: Icon(_isListening ? Icons.stop : Icons.mic, size: 28),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
