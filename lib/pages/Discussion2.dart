@@ -19,7 +19,7 @@ class _VoiceAssistantState extends State<VoiceAssistant> {
   String _responseIA = '';
   FlutterTts _tts = FlutterTts();
 
-  final String _apiKeyGemini = 'TA_CLE_API_GEMINI_ICI'; // Remplace par ta clé
+  final String _apiKeyGemini = 'AIzaSyDPVBid4AcTVH4q7r7mYyuTFEE2ZwV8ubQ'; // Remplace par ta clé
 
   @override
   void initState() {

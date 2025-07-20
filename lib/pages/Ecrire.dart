@@ -12,7 +12,7 @@ class EcrirePage extends StatefulWidget {
 class _EcrirePageState extends State<EcrirePage> {
   final TextEditingController _controller = TextEditingController();
   final List<Map<String, String>> _messages = [];
-  final String _apiKey = 'TA_CLÉ_API_ICI'; // Mets ta vraie clé ici
+  final String _apiKey = 'AIzaSyDPVBid4AcTVH4q7r7mYyuTFEE2ZwV8ubQ'; // Mets ta vraie clé ici
   bool _isLoading = false;
 
   Future<void> _sendMessage(String text) async {
